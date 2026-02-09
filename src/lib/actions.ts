@@ -44,6 +44,17 @@ export async function approveUser(userId: string) {
     }
 }
 
+export async function toggleRole(userId: string, currentRole: "admin" | "user") {
+    const newRole = currentRole === "admin" ? "user" : "admin";
+    try {
+        await db.update(users).set({ role: newRole }).where(eq(users.id, userId));
+        revalidatePath("/admin");
+        return { success: `Successfully updated to ${newRole}` };
+    } catch (error) {
+        return { error: "Failed to update role" };
+    }
+}
+
 export async function deleteUser(userId: string) {
     try {
         await db.delete(users).where(eq(users.id, userId));
