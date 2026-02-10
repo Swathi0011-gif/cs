@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
-import { eq, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { Check, Trash2, Shield, User, Clock, ShieldAlert, UserCheck, Inbox } from "lucide-react";
 import { approveUser, deleteUser, toggleRole } from "@/lib/actions";
 
@@ -127,8 +127,8 @@ export default async function AdminPage() {
                                                         Verified
                                                     </span>
                                                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${user.role === 'admin'
-                                                            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                                                            : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                                                        ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                                        : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
                                                         }`}>
                                                         {user.role}
                                                     </span>
@@ -136,7 +136,7 @@ export default async function AdminPage() {
                                             </td>
                                             <td className="px-8 py-6 text-right">
                                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                                                    <form action={async () => { "use server"; await toggleRole(user.id, user.role as any); }}>
+                                                    <form action={async () => { "use server"; await toggleRole(user.id, user.role as "admin" | "user"); }}>
                                                         <button title="Change Role" className="p-2.5 rounded-xl bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-all">
                                                             <Shield className="w-4 h-4" />
                                                         </button>

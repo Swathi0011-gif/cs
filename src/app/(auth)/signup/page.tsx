@@ -5,7 +5,7 @@ import { signUp } from "@/lib/actions";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { UserPlus, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
+import { Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
 
 export default function SignUpPage() {
     const [error, setError] = useState("");

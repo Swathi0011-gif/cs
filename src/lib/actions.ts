@@ -26,8 +26,8 @@ export async function signUp(formData: FormData) {
             role: "user",
         });
         return { success: "Account created! Pending admin approval." };
-    } catch (error: any) {
-        if (error.code === "23505") {
+    } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === "23505") {
             return { error: "Email already exists" };
         }
         return { error: "Something went wrong" };
@@ -39,7 +39,7 @@ export async function approveUser(userId: string) {
         await db.update(users).set({ approved: true }).where(eq(users.id, userId));
         revalidatePath("/admin");
         return { success: "User approved" };
-    } catch (error) {
+    } catch {
         return { error: "Failed to approve user" };
     }
 }
@@ -50,7 +50,7 @@ export async function toggleRole(userId: string, currentRole: "admin" | "user") 
         await db.update(users).set({ role: newRole }).where(eq(users.id, userId));
         revalidatePath("/admin");
         return { success: `Successfully updated to ${newRole}` };
-    } catch (error) {
+    } catch {
         return { error: "Failed to update role" };
     }
 }
@@ -60,7 +60,7 @@ export async function deleteUser(userId: string) {
         await db.delete(users).where(eq(users.id, userId));
         revalidatePath("/admin");
         return { success: "User deleted" };
-    } catch (error) {
+    } catch {
         return { error: "Failed to delete user" };
     }
 }

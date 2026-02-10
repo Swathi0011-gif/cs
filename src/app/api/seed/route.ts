@@ -49,7 +49,10 @@ export async function GET() {
             email: email,
             password: "adminpassword (please change this after login)"
         });
-    } catch (error: any) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    } catch (error) {
+        return NextResponse.json({
+            success: false,
+            error: error instanceof Error ? error.message : "Initialization failed"
+        }, { status: 500 });
     }
 }
