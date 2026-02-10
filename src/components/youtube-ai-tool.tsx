@@ -1,27 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import { Youtube, Search, ArrowRight, Loader2, Sparkles, BookOpen, FileText, Share2, Copy, CheckCircle2, History, Clock } from "lucide-react";
+import { Youtube, Search, ArrowRight, Loader2, Sparkles, BookOpen, FileText, Share2, Copy, CheckCircle2, History, Clock, FilePlus, ChevronLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ProcessResult {
     success: boolean;
-    method: string;
     content: string;
-    videoId: string;
-    title: string;
 }
 
 export default function YoutubeAITool() {
     const [url, setUrl] = useState("");
+    const [manualTranscript, setManualTranscript] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [result, setResult] = useState<ProcessResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [showManualArea, setShowManualArea] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
+    const [videoTitle, setVideoTitle] = useState("");
+
+    const handleInitialFetch = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!url.trim()) return;
+
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            // Attempt to fetch metadata via oEmbed (Safe official method)
+            const res = await fetch(`https://www.youtube.com/oembed?url=${url}&format=json`);
+            if (res.ok) {
+                const metadata = await res.json();
+                setVideoTitle(metadata.title);
+                setError(null);
+                setShowManualArea(true); // Always ask for transcript now as per instructions
+            } else {
+                setError("Unable to retrieve video info. You can still paste the transcript manually.");
+                setShowManualArea(true);
+            }
+        } catch (err) {
+            setError("Connection error. Please try manual entry.");
+            setShowManualArea(true);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleProcess = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!url.trim()) return;
+        if (!manualTranscript.trim()) return;
 
         setIsLoading(true);
         setResult(null);
@@ -31,13 +58,16 @@ export default function YoutubeAITool() {
             const response = await fetch("/api/process-video", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url })
+                body: JSON.stringify({
+                    transcript: manualTranscript,
+                    videoTitle: videoTitle
+                })
             });
 
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.error || "Failed to process video");
+                throw new Error(data.error || "Failed to process transcript");
             }
 
             setResult(data);
@@ -55,56 +85,106 @@ export default function YoutubeAITool() {
         setTimeout(() => setIsCopied(false), 2000);
     };
 
+    const reset = () => {
+        setResult(null);
+        setShowManualArea(false);
+        setManualTranscript("");
+        setUrl("");
+        setVideoTitle("");
+        setError(null);
+    };
+
     return (
         <div className="space-y-8 animate-in fade-in duration-700">
             {/* Input Section */}
-            <div className="relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-[2rem] blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200"></div>
-                <div className="relative p-8 rounded-[2rem] bg-slate-900/40 border border-slate-800 backdrop-blur-xl">
-                    <form onSubmit={handleProcess} className="space-y-6">
-                        <div className="flex flex-col md:flex-row items-center gap-4">
-                            <div className="relative flex-1 w-full">
-                                <Youtube className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                                <input
-                                    type="text"
-                                    placeholder="Paste YouTube link (under 15 mins)..."
-                                    className="w-full pl-14 pr-6 py-5 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
-                                    value={url}
-                                    onChange={(e) => setUrl(e.target.value)}
-                                    disabled={isLoading}
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                disabled={isLoading || !url}
-                                className="w-full md:w-auto px-10 py-5 bg-white text-black font-bold rounded-2xl hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50 disabled:hover:bg-white flex items-center justify-center gap-3 shadow-xl shadow-white/5"
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                        Transcribing & Analyzing...
-                                    </>
-                                ) : (
-                                    <>
-                                        Generate Notes
-                                        <ArrowRight className="w-5 h-5" />
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                        {isLoading && (
-                            <div className="flex items-center gap-2 text-indigo-400 text-xs font-medium animate-pulse px-2">
-                                <Sparkles className="w-3 h-3" />
-                                <span>Note: For videos without transcripts, we are now using AI audio transcription. This may take a minute.</span>
-                            </div>
+            {!result && (
+                <div className="relative group">
+                    <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-[2rem] blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200"></div>
+                    <div className="relative p-8 rounded-[2rem] bg-slate-900/40 border border-slate-800 backdrop-blur-xl">
+                        {!showManualArea ? (
+                            <form onSubmit={handleInitialFetch} className="space-y-6">
+                                <div className="flex flex-col md:flex-row items-center gap-4">
+                                    <div className="relative flex-1 w-full">
+                                        <Youtube className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                                        <input
+                                            type="text"
+                                            placeholder="Paste YouTube Video URL..."
+                                            className="w-full pl-14 pr-6 py-5 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                                            value={url}
+                                            onChange={(e) => setUrl(e.target.value)}
+                                            disabled={isLoading}
+                                        />
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        disabled={isLoading || !url}
+                                        className="w-full md:w-auto px-10 py-5 bg-white text-black font-bold rounded-2xl hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50 disabled:hover:bg-white flex items-center justify-center gap-3 shadow-xl shadow-white/5"
+                                    >
+                                        {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Continue"}
+                                    </button>
+                                </div>
+                                <div className="text-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowManualArea(true)}
+                                        className="text-slate-500 hover:text-indigo-400 text-sm font-medium transition-colors"
+                                    >
+                                        Or paste transcript manually
+                                    </button>
+                                </div>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleProcess} className="space-y-6">
+                                <div className="flex items-center justify-between mb-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowManualArea(false)}
+                                        className="flex items-center gap-2 text-slate-500 hover:text-slate-300 transition-colors text-sm"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" /> Back to URL
+                                    </button>
+                                    {videoTitle && (
+                                        <span className="text-indigo-400 text-sm font-medium line-clamp-1 max-w-[200px]">
+                                            {videoTitle}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Paste Transcript Below</label>
+                                    <textarea
+                                        placeholder="Paste the video transcript here..."
+                                        className="w-full p-6 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all min-h-[300px] resize-none placeholder:text-slate-600"
+                                        value={manualTranscript}
+                                        onChange={(e) => setManualTranscript(e.target.value)}
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={isLoading || manualTranscript.length < 50}
+                                    className="w-full py-5 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-bold rounded-2xl hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-indigo-500/20"
+                                >
+                                    {isLoading ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            Analyzing with OpenAI...
+                                        </>
+                                    ) : (
+                                        <>
+                                            Generate AI Summary & Notes
+                                            <Sparkles className="w-5 h-5" />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
                         )}
-                    </form>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Error Message */}
             {error && (
-                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-3 animate-in slide-in-from-top-2">
+                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-3">
                     <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                     {error}
                 </div>
@@ -121,19 +201,12 @@ export default function YoutubeAITool() {
                         {/* Header Info */}
                         <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-6 rounded-3xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
                             <div className="flex items-center gap-4">
-                                <div className="w-16 h-12 rounded-xl bg-black/40 flex items-center justify-center border border-slate-800 overflow-hidden">
-                                    <img src={`https://img.youtube.com/vi/${result.videoId}/mqdefault.jpg`} alt="thumbnail" className="w-full h-full object-cover opacity-60" />
+                                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+                                    <Sparkles className="w-6 h-6 text-indigo-400" />
                                 </div>
                                 <div>
-                                    <h2 className="font-bold text-slate-200 line-clamp-1">{result.title}</h2>
-                                    <div className="flex items-center gap-3 mt-1">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${result.method === 'whisper' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'}`}>
-                                            {result.method === 'whisper' ? 'AI Audio Transcription' : 'Official Transcript'}
-                                        </span>
-                                        <span className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
-                                            <Clock className="w-3 h-3" /> Max 15 mins
-                                        </span>
-                                    </div>
+                                    <h2 className="font-bold text-slate-200">{videoTitle || "AI Generated Study Kit"}</h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">Powered by GPT-4 and Manual Transcript Input</p>
                                 </div>
                             </div>
                             <div className="flex gap-2 w-full md:w-auto">
@@ -144,28 +217,20 @@ export default function YoutubeAITool() {
                                     {isCopied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                                     {isCopied ? "Copied" : "Copy Notes"}
                                 </button>
-                                <button className="p-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 border border-slate-700">
-                                    <Share2 className="w-5 h-5" />
+                                <button
+                                    onClick={reset}
+                                    className="p-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 border border-slate-700"
+                                    title="New Processing"
+                                >
+                                    <History className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
 
                         {/* Content Area */}
                         <div className="p-10 rounded-[2.5rem] bg-slate-900/40 border border-slate-800 backdrop-blur-xl relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
-                                <BookOpen className="w-64 h-64 text-indigo-500" />
-                            </div>
-
-                            <div className="prose prose-invert max-w-none text-slate-300 leading-relaxed whitespace-pre-wrap font-sans text-lg relative z-10 selection:bg-indigo-500/20">
+                            <div className="prose prose-invert max-w-none text-slate-300 leading-relaxed whitespace-pre-wrap font-sans text-lg relative z-10">
                                 {result.content}
-                            </div>
-
-                            <div className="mt-12 pt-8 border-t border-slate-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                <div className="flex items-center gap-2">
-                                    <Sparkles className="w-4 h-4 text-indigo-400" />
-                                    <span className="text-xs text-slate-500 font-medium tracking-tight">AI Note Engine: GPT-4o-mini & Whisper-1</span>
-                                </div>
-                                <div className="text-[10px] text-slate-600 font-mono uppercase tracking-[0.2em]">Verified Secure Process</div>
                             </div>
                         </div>
                     </motion.div>
@@ -173,24 +238,19 @@ export default function YoutubeAITool() {
             </AnimatePresence>
 
             {/* Empty State */}
-            {!result && !isLoading && !error && (
+            {!result && !isLoading && !error && !showManualArea && (
                 <div className="py-24 flex flex-col items-center justify-center text-center space-y-8 animate-in zoom-in-95 duration-1000">
                     <div className="relative">
                         <div className="absolute -inset-4 bg-indigo-500/20 blur-3xl rounded-full"></div>
                         <div className="relative w-24 h-24 rounded-[2rem] bg-slate-900 border border-slate-800 flex items-center justify-center transform rotate-12 group-hover:rotate-0 transition-transform duration-500">
-                            <Sparkles className="w-12 h-12 text-indigo-500/30" />
+                            <FilePlus className="w-12 h-12 text-indigo-500/30" />
                         </div>
                     </div>
                     <div className="space-y-3">
-                        <h2 className="text-3xl font-bold text-slate-200 tracking-tight">Your AI Study Assistant</h2>
+                        <h2 className="text-3xl font-bold text-slate-200 tracking-tight">Manual Transcript Mode</h2>
                         <p className="text-slate-500 max-w-sm mx-auto text-lg leading-relaxed">
-                            Zero failure mode: Now includes audio transcription for videos with disabled captions.
+                            Paste a YouTube URL to fetch info, then paste its transcript for AI analysis.
                         </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-6 opacity-30 grayscale pointer-events-none pt-4">
-                        <div className="flex items-center gap-2"><FileText className="w-5 h-5" /> <span className="text-sm font-bold">SUMMARY</span></div>
-                        <div className="flex items-center gap-2"><BookOpen className="w-5 h-5" /> <span className="text-sm font-bold">NOTES</span></div>
-                        <div className="flex items-center gap-2"><History className="w-5 h-5" /> <span className="text-sm font-bold">QUESTIONS</span></div>
                     </div>
                 </div>
             )}
