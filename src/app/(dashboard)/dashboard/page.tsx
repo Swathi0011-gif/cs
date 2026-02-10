@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { LogOut, User, Shield, Activity, Users } from "lucide-react";
+import { LogOut, User, Shield, Activity, Users, Sparkles, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "@/lib/auth";
 
@@ -76,14 +76,26 @@ export default async function DashboardPage() {
                         </div>
                     </div>
 
-                    <div className="p-8 rounded-3xl bg-gradient-to-br from-indigo-950/40 to-slate-900/40 border border-indigo-500/20 backdrop-blur-xl">
-                        <h3 className="text-xl font-bold mb-4">Welcome to your workspace</h3>
-                        <p className="text-slate-400 leading-relaxed">
-                            Unlock the full potential of your premium dashboard. Manage your projects, monitor real-time data, and collaborate with your team in a secure, high-performance environment.
-                        </p>
-                        <button className="mt-6 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition-colors">
-                            Get Started
-                        </button>
+                    <div className="grid grid-cols-1 sm:flex flex-col gap-8">
+                        <div className="p-8 rounded-3xl bg-gradient-to-br from-indigo-950/40 to-slate-900/40 border border-indigo-500/20 backdrop-blur-xl">
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-indigo-400" />
+                                AI Study Tool
+                            </h3>
+                            <p className="text-slate-400 leading-relaxed mb-6">
+                                Transform any YouTube video into clear summary and structured study notes instantly.
+                            </p>
+                            <Link href="/youtube-ai" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition-colors">
+                                Open Tool <ArrowRight className="w-4 h-4" />
+                            </Link>
+                        </div>
+
+                        <div className="p-8 rounded-3xl bg-slate-900/40 border border-slate-800 backdrop-blur-xl">
+                            <h3 className="text-xl font-bold mb-4">Your Workspace</h3>
+                            <p className="text-slate-400 leading-relaxed">
+                                Manage your projects and monitor real-time data in a secure, high-performance environment.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
