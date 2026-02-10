@@ -1,14 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { Youtube, Search, ArrowRight, Loader2, Sparkles, BookOpen, FileText, Share2, Copy, CheckCircle2 } from "lucide-react";
-import { processYouTubeVideo, type AIResponse } from "@/lib/ai-actions";
+import { Youtube, Search, ArrowRight, Loader2, Sparkles, BookOpen, FileText, Share2, Copy, CheckCircle2, History, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
+interface ProcessResult {
+    success: boolean;
+    method: string;
+    content: string;
+    videoId: string;
+    title: string;
+}
 
 export default function YoutubeAITool() {
     const [url, setUrl] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [result, setResult] = useState<AIResponse | null>(null);
+    const [result, setResult] = useState<ProcessResult | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const [isCopied, setIsCopied] = useState(false);
 
     const handleProcess = async (e: React.FormEvent) => {
@@ -17,16 +25,32 @@ export default function YoutubeAITool() {
 
         setIsLoading(true);
         setResult(null);
+        setError(null);
 
-        const response = await processYouTubeVideo(url);
-        setResult(response);
-        setIsLoading(false);
+        try {
+            const response = await fetch("/api/process-video", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to process video");
+            }
+
+            setResult(data);
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const copyToClipboard = () => {
         if (!result) return;
-        const text = `Summary:\n${result.summary}\n\nStudy Notes:\n${result.studyNotes}`;
-        navigator.clipboard.writeText(text);
+        navigator.clipboard.writeText(result.content);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
     };
@@ -43,7 +67,7 @@ export default function YoutubeAITool() {
                                 <Youtube className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
                                 <input
                                     type="text"
-                                    placeholder="Paste YouTube video link here..."
+                                    placeholder="Paste YouTube link (under 15 mins)..."
                                     className="w-full pl-14 pr-6 py-5 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
@@ -58,7 +82,7 @@ export default function YoutubeAITool() {
                                 {isLoading ? (
                                     <>
                                         <Loader2 className="w-5 h-5 animate-spin" />
-                                        Analyzing...
+                                        Transcribing & Analyzing...
                                     </>
                                 ) : (
                                     <>
@@ -68,83 +92,80 @@ export default function YoutubeAITool() {
                                 )}
                             </button>
                         </div>
+                        {isLoading && (
+                            <div className="flex items-center gap-2 text-indigo-400 text-xs font-medium animate-pulse px-2">
+                                <Sparkles className="w-3 h-3" />
+                                <span>Note: For videos without transcripts, we are now using AI audio transcription. This may take a minute.</span>
+                            </div>
+                        )}
                     </form>
                 </div>
             </div>
 
             {/* Error Message */}
-            {result?.error && (
+            {error && (
                 <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-3 animate-in slide-in-from-top-2">
                     <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    {result.error}
+                    {error}
                 </div>
             )}
 
             {/* Results Section */}
             <AnimatePresence>
-                {result && !result.error && (
+                {result && (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="grid grid-cols-1 lg:grid-cols-5 gap-8"
+                        className="space-y-8"
                     >
-                        {/* Summary Column */}
-                        <div className="lg:col-span-2 space-y-8">
-                            <div className="p-8 rounded-[2rem] bg-slate-900/40 border border-slate-800 flex flex-col h-full bg-gradient-to-b from-slate-900/40 to-black/20">
-                                <div className="flex items-center justify-between mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
-                                            <FileText className="w-5 h-5 text-cyan-400" />
-                                        </div>
-                                        <h3 className="font-bold text-xl">Executive Summary</h3>
+                        {/* Header Info */}
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-6 rounded-3xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-12 rounded-xl bg-black/40 flex items-center justify-center border border-slate-800 overflow-hidden">
+                                    <img src={`https://img.youtube.com/vi/${result.videoId}/mqdefault.jpg`} alt="thumbnail" className="w-full h-full object-cover opacity-60" />
+                                </div>
+                                <div>
+                                    <h2 className="font-bold text-slate-200 line-clamp-1">{result.title}</h2>
+                                    <div className="flex items-center gap-3 mt-1">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${result.method === 'whisper' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'}`}>
+                                            {result.method === 'whisper' ? 'AI Audio Transcription' : 'Official Transcript'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
+                                            <Clock className="w-3 h-3" /> Max 15 mins
+                                        </span>
                                     </div>
-                                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border ${result.isFallback ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'}`}>
-                                        {result.isFallback ? 'Metadata Based' : 'Full Transcript'}
-                                    </span>
                                 </div>
-                                <div className="flex-1 text-slate-400 leading-relaxed text-lg">
-                                    {result.isFallback && (
-                                        <div className="mb-4 p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-amber-500 text-xs italic">
-                                            Transcript is disabled for this video. Summary generated from title and author metadata.
-                                        </div>
-                                    )}
-                                    {result.summary}
-                                </div>
+                            </div>
+                            <div className="flex gap-2 w-full md:w-auto">
+                                <button
+                                    onClick={copyToClipboard}
+                                    className="flex-1 md:flex-none px-6 py-3 bg-slate-800 text-slate-300 font-semibold rounded-xl hover:bg-slate-700 transition-all flex items-center justify-center gap-2 border border-slate-700"
+                                >
+                                    {isCopied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                                    {isCopied ? "Copied" : "Copy Notes"}
+                                </button>
+                                <button className="p-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 border border-slate-700">
+                                    <Share2 className="w-5 h-5" />
+                                </button>
                             </div>
                         </div>
 
-                        {/* Study Notes Column */}
-                        <div className="lg:col-span-3 space-y-8">
-                            <div className="p-8 rounded-[2rem] bg-slate-900/40 border border-slate-800 relative group">
-                                <div className="flex items-center justify-between mb-8">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                                            <BookOpen className="w-5 h-5 text-indigo-400" />
-                                        </div>
-                                        <h3 className="font-bold text-xl">Study Notes</h3>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={copyToClipboard}
-                                            className="p-2.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all flex items-center gap-2 text-sm font-medium"
-                                        >
-                                            {isCopied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                                            {isCopied ? "Copied" : "Copy"}
-                                        </button>
-                                        <button className="p-2.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all">
-                                            <Share2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
+                        {/* Content Area */}
+                        <div className="p-10 rounded-[2.5rem] bg-slate-900/40 border border-slate-800 backdrop-blur-xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
+                                <BookOpen className="w-64 h-64 text-indigo-500" />
+                            </div>
 
-                                <div className="prose prose-invert max-w-none text-slate-300 leading-relaxed whitespace-pre-wrap font-mono text-sm bg-black/30 p-6 rounded-2xl border border-slate-800/50">
-                                    {result.studyNotes}
-                                </div>
+                            <div className="prose prose-invert max-w-none text-slate-300 leading-relaxed whitespace-pre-wrap font-sans text-lg relative z-10 selection:bg-indigo-500/20">
+                                {result.content}
+                            </div>
 
-                                <div className="mt-8 flex items-center gap-2 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
+                            <div className="mt-12 pt-8 border-t border-slate-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-2">
                                     <Sparkles className="w-4 h-4 text-indigo-400" />
-                                    <span className="text-xs text-slate-500 font-medium">Study notes generated with Gemini AI Engine</span>
+                                    <span className="text-xs text-slate-500 font-medium tracking-tight">AI Note Engine: GPT-4o-mini & Whisper-1</span>
                                 </div>
+                                <div className="text-[10px] text-slate-600 font-mono uppercase tracking-[0.2em]">Verified Secure Process</div>
                             </div>
                         </div>
                     </motion.div>
@@ -152,15 +173,25 @@ export default function YoutubeAITool() {
             </AnimatePresence>
 
             {/* Empty State */}
-            {!result && !isLoading && (
-                <div className="py-20 flex flex-col items-center justify-center text-center space-y-6">
-                    <div className="w-20 h-20 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-4">
-                        <Sparkles className="w-10 h-10 text-indigo-500/20" />
+            {!result && !isLoading && !error && (
+                <div className="py-24 flex flex-col items-center justify-center text-center space-y-8 animate-in zoom-in-95 duration-1000">
+                    <div className="relative">
+                        <div className="absolute -inset-4 bg-indigo-500/20 blur-3xl rounded-full"></div>
+                        <div className="relative w-24 h-24 rounded-[2rem] bg-slate-900 border border-slate-800 flex items-center justify-center transform rotate-12 group-hover:rotate-0 transition-transform duration-500">
+                            <Sparkles className="w-12 h-12 text-indigo-500/30" />
+                        </div>
                     </div>
-                    <h2 className="text-2xl font-bold text-slate-300">Bring your learning to life</h2>
-                    <p className="text-slate-500 max-w-md mx-auto">
-                        Paste a link to any educational video on YouTube and we'll transform it into high-quality study notes and a concise summary.
-                    </p>
+                    <div className="space-y-3">
+                        <h2 className="text-3xl font-bold text-slate-200 tracking-tight">Your AI Study Assistant</h2>
+                        <p className="text-slate-500 max-w-sm mx-auto text-lg leading-relaxed">
+                            Zero failure mode: Now includes audio transcription for videos with disabled captions.
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-6 opacity-30 grayscale pointer-events-none pt-4">
+                        <div className="flex items-center gap-2"><FileText className="w-5 h-5" /> <span className="text-sm font-bold">SUMMARY</span></div>
+                        <div className="flex items-center gap-2"><BookOpen className="w-5 h-5" /> <span className="text-sm font-bold">NOTES</span></div>
+                        <div className="flex items-center gap-2"><History className="w-5 h-5" /> <span className="text-sm font-bold">QUESTIONS</span></div>
+                    </div>
                 </div>
             )}
         </div>
