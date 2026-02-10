@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { YoutubeTranscript } from "youtube-transcript-plus";
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
 export const maxDuration = 60;
@@ -69,7 +66,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Transcript is too short or empty." }, { status: 400 });
         }
 
-        // 3. Generate Structured Notes with GPT
+        // 3. Generate Structured Notes with Google Gemini
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
         const prompt = `
             You are an expert academic tutor. Analyze the following transcript from a video titled "${videoTitle}" and generate highly structured study notes.
             
@@ -85,16 +84,8 @@ export async function POST(req: NextRequest) {
             ${transcript.substring(0, 50000)}
         `;
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: "You are a helpful assistant that generates high-quality study notes." },
-                { role: "user", content: prompt }
-            ],
-            response_format: { type: "text" }
-        });
-
-        const resultText = completion.choices[0].message.content;
+        const result = await model.generateContent(prompt);
+        const resultText = result.response.text();
 
         return NextResponse.json({
             success: true,
