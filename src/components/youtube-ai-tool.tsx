@@ -7,48 +7,20 @@ import { motion, AnimatePresence } from "framer-motion";
 interface ProcessResult {
     success: boolean;
     content: string;
+    title: string;
+    videoId: string;
 }
 
 export default function YoutubeAITool() {
     const [url, setUrl] = useState("");
-    const [manualTranscript, setManualTranscript] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [result, setResult] = useState<ProcessResult | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [showManualArea, setShowManualArea] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
-    const [videoTitle, setVideoTitle] = useState("");
-
-    const handleInitialFetch = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!url.trim()) return;
-
-        setIsLoading(true);
-        setError(null);
-
-        try {
-            // Attempt to fetch metadata via oEmbed (Safe official method)
-            const res = await fetch(`https://www.youtube.com/oembed?url=${url}&format=json`);
-            if (res.ok) {
-                const metadata = await res.json();
-                setVideoTitle(metadata.title);
-                setError(null);
-                setShowManualArea(true); // Always ask for transcript now as per instructions
-            } else {
-                setError("Unable to retrieve video info. You can still paste the transcript manually.");
-                setShowManualArea(true);
-            }
-        } catch (err) {
-            setError("Connection error. Please try manual entry.");
-            setShowManualArea(true);
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
     const handleProcess = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!manualTranscript.trim()) return;
+        if (!url.trim()) return;
 
         setIsLoading(true);
         setResult(null);
@@ -58,16 +30,13 @@ export default function YoutubeAITool() {
             const response = await fetch("/api/process-video", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    transcript: manualTranscript,
-                    videoTitle: videoTitle
-                })
+                body: JSON.stringify({ url })
             });
 
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.error || "Failed to process transcript");
+                throw new Error(data.error || "Failed to process video");
             }
 
             setResult(data);
@@ -87,10 +56,7 @@ export default function YoutubeAITool() {
 
     const reset = () => {
         setResult(null);
-        setShowManualArea(false);
-        setManualTranscript("");
         setUrl("");
-        setVideoTitle("");
         setError(null);
     };
 
@@ -101,83 +67,43 @@ export default function YoutubeAITool() {
                 <div className="relative group">
                     <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-[2rem] blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200"></div>
                     <div className="relative p-8 rounded-[2rem] bg-slate-900/40 border border-slate-800 backdrop-blur-xl">
-                        {!showManualArea ? (
-                            <form onSubmit={handleInitialFetch} className="space-y-6">
-                                <div className="flex flex-col md:flex-row items-center gap-4">
-                                    <div className="relative flex-1 w-full">
-                                        <Youtube className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                                        <input
-                                            type="text"
-                                            placeholder="Paste YouTube Video URL..."
-                                            className="w-full pl-14 pr-6 py-5 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
-                                            value={url}
-                                            onChange={(e) => setUrl(e.target.value)}
-                                            disabled={isLoading}
-                                        />
-                                    </div>
-                                    <button
-                                        type="submit"
-                                        disabled={isLoading || !url}
-                                        className="w-full md:w-auto px-10 py-5 bg-white text-black font-bold rounded-2xl hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50 disabled:hover:bg-white flex items-center justify-center gap-3 shadow-xl shadow-white/5"
-                                    >
-                                        {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Continue"}
-                                    </button>
-                                </div>
-                                <div className="text-center">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowManualArea(true)}
-                                        className="text-slate-500 hover:text-indigo-400 text-sm font-medium transition-colors"
-                                    >
-                                        Or paste transcript manually
-                                    </button>
-                                </div>
-                            </form>
-                        ) : (
-                            <form onSubmit={handleProcess} className="space-y-6">
-                                <div className="flex items-center justify-between mb-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowManualArea(false)}
-                                        className="flex items-center gap-2 text-slate-500 hover:text-slate-300 transition-colors text-sm"
-                                    >
-                                        <ChevronLeft className="w-4 h-4" /> Back to URL
-                                    </button>
-                                    {videoTitle && (
-                                        <span className="text-indigo-400 text-sm font-medium line-clamp-1 max-w-[200px]">
-                                            {videoTitle}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold text-slate-400 uppercase tracking-widest ml-1">Paste Transcript Below</label>
-                                    <textarea
-                                        placeholder="Paste the video transcript here..."
-                                        className="w-full p-6 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all min-h-[300px] resize-none placeholder:text-slate-600"
-                                        value={manualTranscript}
-                                        onChange={(e) => setManualTranscript(e.target.value)}
+                        <form onSubmit={handleProcess} className="space-y-6">
+                            <div className="flex flex-col md:flex-row items-center gap-4">
+                                <div className="relative flex-1 w-full">
+                                    <Youtube className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                                    <input
+                                        type="text"
+                                        placeholder="Paste YouTube Video URL..."
+                                        className="w-full pl-14 pr-6 py-5 bg-black/40 border border-slate-800 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                                        value={url}
+                                        onChange={(e) => setUrl(e.target.value)}
                                         disabled={isLoading}
                                     />
                                 </div>
                                 <button
                                     type="submit"
-                                    disabled={isLoading || manualTranscript.length < 50}
-                                    className="w-full py-5 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-bold rounded-2xl hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg shadow-indigo-500/20"
+                                    disabled={isLoading || !url}
+                                    className="w-full md:w-auto px-10 py-5 bg-white text-black font-bold rounded-2xl hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50 disabled:hover:bg-white flex items-center justify-center gap-3 shadow-xl shadow-white/5"
                                 >
                                     {isLoading ? (
                                         <>
                                             <Loader2 className="w-5 h-5 animate-spin" />
-                                            Analyzing with OpenAI...
+                                            Analyzing...
                                         </>
                                     ) : (
                                         <>
-                                            Generate AI Summary & Notes
+                                            Generate AI Notes
                                             <Sparkles className="w-5 h-5" />
                                         </>
                                     )}
                                 </button>
-                            </form>
-                        )}
+                            </div>
+                            {isLoading && (
+                                <p className="text-center text-indigo-400 text-sm font-medium animate-pulse">
+                                    Fetching transcript and generating structured study kit with GPT-4...
+                                </p>
+                            )}
+                        </form>
                     </div>
                 </div>
             )}
@@ -201,12 +127,12 @@ export default function YoutubeAITool() {
                         {/* Header Info */}
                         <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-6 rounded-3xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
-                                    <Sparkles className="w-6 h-6 text-indigo-400" />
+                                <div className="w-16 h-12 rounded-xl bg-black/40 flex items-center justify-center border border-slate-800 overflow-hidden">
+                                    <img src={`https://img.youtube.com/vi/${result.videoId}/mqdefault.jpg`} alt="thumbnail" className="w-full h-full object-cover opacity-60" />
                                 </div>
                                 <div>
-                                    <h2 className="font-bold text-slate-200">{videoTitle || "AI Generated Study Kit"}</h2>
-                                    <p className="text-xs text-slate-500 mt-0.5">Powered by GPT-4 and Manual Transcript Input</p>
+                                    <h2 className="font-bold text-slate-200 line-clamp-1">{result.title}</h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">Automated Analysis Completed</p>
                                 </div>
                             </div>
                             <div className="flex gap-2 w-full md:w-auto">
@@ -220,7 +146,6 @@ export default function YoutubeAITool() {
                                 <button
                                     onClick={reset}
                                     className="p-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 border border-slate-700"
-                                    title="New Processing"
                                 >
                                     <History className="w-5 h-5" />
                                 </button>
@@ -238,18 +163,18 @@ export default function YoutubeAITool() {
             </AnimatePresence>
 
             {/* Empty State */}
-            {!result && !isLoading && !error && !showManualArea && (
+            {!result && !isLoading && !error && (
                 <div className="py-24 flex flex-col items-center justify-center text-center space-y-8 animate-in zoom-in-95 duration-1000">
                     <div className="relative">
                         <div className="absolute -inset-4 bg-indigo-500/20 blur-3xl rounded-full"></div>
                         <div className="relative w-24 h-24 rounded-[2rem] bg-slate-900 border border-slate-800 flex items-center justify-center transform rotate-12 group-hover:rotate-0 transition-transform duration-500">
-                            <FilePlus className="w-12 h-12 text-indigo-500/30" />
+                            <Sparkles className="w-12 h-12 text-indigo-500/30" />
                         </div>
                     </div>
                     <div className="space-y-3">
-                        <h2 className="text-3xl font-bold text-slate-200 tracking-tight">Manual Transcript Mode</h2>
+                        <h2 className="text-3xl font-bold text-slate-200 tracking-tight">AI Note Generator</h2>
                         <p className="text-slate-500 max-w-sm mx-auto text-lg leading-relaxed">
-                            Paste a YouTube URL to fetch info, then paste its transcript for AI analysis.
+                            Zero manual steps. Paste a link and wait for your structured study kit.
                         </p>
                     </div>
                 </div>
