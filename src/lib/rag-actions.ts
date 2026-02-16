@@ -38,6 +38,7 @@ function chunkText(text: string, chunkSize: number = 1000, overlap: number = 200
 }
 
 export async function uploadDocument(formData: FormData) {
+    console.log("Starting uploadDocument action...");
     const session = await auth();
     if (!session?.user?.id) {
         return { error: "You must be logged in to upload documents." };
@@ -49,11 +50,13 @@ export async function uploadDocument(formData: FormData) {
     }
 
     try {
+        console.log("Extracting file from formData...");
         let textContent = "";
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
         if (file.type === "application/pdf") {
+            console.log("Processing PDF file...", file.name);
             const parser = new PDFParse({ data: buffer });
             const result = await parser.getText();
             textContent = result.text;
@@ -68,7 +71,9 @@ export async function uploadDocument(formData: FormData) {
             return { error: "Could not extract text from the file." };
         }
 
+        console.log("Extracted text length:", textContent.length);
         // 1. Create document record
+        console.log("Inserting document into database...");
         const [doc] = await db.insert(documents).values({
             userId: session.user.id,
             name: file.name,
@@ -76,7 +81,9 @@ export async function uploadDocument(formData: FormData) {
             content: textContent,
         }).returning();
 
+        console.log("Document inserted with ID:", doc.id);
         // 2. Chunk text and save chunks
+        console.log("Chunking text...");
         const chunks = chunkText(textContent);
         const chunkValues = chunks.map((chunk, index) => ({
             documentId: doc.id,
