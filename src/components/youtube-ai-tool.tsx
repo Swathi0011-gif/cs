@@ -100,7 +100,7 @@ export default function YoutubeAITool() {
                             </div>
                             {isLoading && (
                                 <p className="text-center text-indigo-400 text-sm font-medium animate-pulse">
-                                    Fetching transcript and generating structured study kit with GPT-4...
+                                    AI is analyzing your video and generating high-quality study notes...
                                 </p>
                             )}
                         </form>

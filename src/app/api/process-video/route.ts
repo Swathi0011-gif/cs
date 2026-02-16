@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleAIFileManager } from "@google/generative-ai/server";
 import { YoutubeTranscript } from "youtube-transcript-plus";
+import ytdl from "@distube/ytdl-core";
+import fs from "fs-extra";
+import path from "path";
+import os from "os";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
+const fileManager = new GoogleAIFileManager(process.env.GOOGLE_AI_API_KEY || "");
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
 export const maxDuration = 60;
@@ -15,89 +21,99 @@ function extractVideoId(url: string): string | null {
 
 async function getVideoMetadata(videoId: string) {
     if (!YOUTUBE_API_KEY) return null;
-
     try {
         const url = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${YOUTUBE_API_KEY}&part=snippet`;
         const res = await fetch(url);
         const data = await res.json();
-
-        if (data.items && data.items.length > 0) {
-            return {
-                title: data.items[0].snippet.title,
-                channelTitle: data.items[0].snippet.channelTitle,
-            };
-        }
+        return data.items?.[0]?.snippet ? {
+            title: data.items[0].snippet.title,
+            channelTitle: data.items[0].snippet.channelTitle,
+        } : null;
     } catch (e) {
         console.error("Metadata fetch error:", e);
+        return null;
     }
-    return null;
 }
 
 export async function POST(req: NextRequest) {
+    let tempFilePath = "";
     try {
         const { url } = await req.json();
-
-        if (!url) {
-            return NextResponse.json({ error: "YouTube URL is required." }, { status: 400 });
-        }
+        if (!url) return NextResponse.json({ error: "YouTube URL is required." }, { status: 400 });
 
         const videoId = extractVideoId(url);
-        if (!videoId) {
-            return NextResponse.json({ error: "Invalid YouTube URL." }, { status: 400 });
-        }
+        if (!videoId) return NextResponse.json({ error: "Invalid YouTube URL." }, { status: 400 });
 
-        // 1. Fetch Metadata (Official API)
         const metadata = await getVideoMetadata(videoId);
         const videoTitle = metadata?.title || "Unknown Video";
 
-        // 2. Fetch Transcript (Automated)
-        let transcript = "";
+        // Try to fetch text transcript first (Faster/Cheaper)
         try {
             const transcriptItems = await YoutubeTranscript.fetchTranscript(url);
-            transcript = transcriptItems.map(item => item.text).join(" ");
-        } catch (e: any) {
-            console.error("Transcript fetch failed:", e);
-            return NextResponse.json({
-                error: "Could not fetch transcript for this video. Captions might be disabled or blocked."
-            }, { status: 500 });
+            const transcript = transcriptItems.map(item => item.text).join(" ");
+
+            if (transcript && transcript.length > 100) {
+                console.log("Using text transcript path...");
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                const prompt = `Analyze this transcript from "${videoTitle}" and generate structured study notes. 
+                Include: Summary, Key Concepts, Definitions, Takeaways, and 5 Practice Questions with answers.
+                Transcript: ${transcript.substring(0, 50000)}`;
+                const result = await model.generateContent(prompt);
+                return NextResponse.json({ success: true, content: result.response.text(), title: videoTitle, videoId });
+            }
+        } catch (e) {
+            console.log("Text transcript failed, falling back to audio analysis...");
         }
 
-        if (!transcript || transcript.length < 50) {
-            return NextResponse.json({ error: "Transcript is too short or empty." }, { status: 400 });
-        }
+        // Fallback: Audio Analysis via Gemini Multimodal
+        tempFilePath = path.join(os.tmpdir(), `${videoId}.mp3`);
 
-        // 3. Generate Structured Notes with Google Gemini
+        await new Promise((resolve, reject) => {
+            const stream = ytdl(url, { filter: "audioonly", quality: "lowestaudio" })
+                .pipe(fs.createWriteStream(tempFilePath));
+            stream.on("finish", () => resolve(true));
+            stream.on("error", reject);
+        });
+
+        // Upload to Gemini
+        const uploadResult = await fileManager.uploadFile(tempFilePath, {
+            mimeType: "audio/mpeg",
+            displayName: videoTitle,
+        });
+
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-        const prompt = `
-            You are an expert academic tutor. Analyze the following transcript from a video titled "${videoTitle}" and generate highly structured study notes.
-            
+        const result = await model.generateContent([
+            {
+                fileData: {
+                    mimeType: uploadResult.file.mimeType,
+                    fileUri: uploadResult.file.uri
+                }
+            },
+            {
+                text: `Analyze the audio of this video titled "${videoTitle}" and generate highly structured study notes.
             STRUCTURE:
-            - Clean Title (Catchy and relevant)
-            - Short Summary (MAX 2 paragraphs)
-            - Key Concepts (Bullet points with brief explanations)
-            - Important Definitions (Bold terms and their meanings)
-            - Key Takeaways (Numbered list of main conclusions)
-            - 5 Practice Questions (with answers provided below each question)
-
-            Transcript:
-            ${transcript.substring(0, 50000)}
-        `;
-
-        const result = await model.generateContent(prompt);
-        const resultText = result.response.text();
+            - Clean Title
+            - Short Summary
+            - Key Concepts
+            - Important Definitions
+            - Key Takeaways
+            - 5 Practice Questions (with answers below)
+            ` }
+        ]);
 
         return NextResponse.json({
             success: true,
-            content: resultText,
+            content: result.response.text(),
             title: videoTitle,
             videoId
         });
 
     } catch (error: any) {
         console.error("Processing Error:", error);
-        return NextResponse.json({
-            error: error.message || "An unexpected error occurred during processing."
-        }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Automation failed. Please check the video URL." }, { status: 500 });
+    } finally {
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+            await fs.remove(tempFilePath).catch(console.error);
+        }
     }
 }

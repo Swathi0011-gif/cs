@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { LogOut, User, Shield, Activity, Users, Sparkles, ArrowRight } from "lucide-react";
+import { LogOut, User, Shield, Activity, Users, Sparkles, ArrowRight, FileText } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "@/lib/auth";
 
@@ -86,6 +86,19 @@ export default async function DashboardPage() {
                                 Transform any YouTube video into clear summary and structured study notes instantly.
                             </p>
                             <Link href="/youtube-ai" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition-colors">
+                                Open Tool <ArrowRight className="w-4 h-4" />
+                            </Link>
+                        </div>
+
+                        <div className="p-8 rounded-3xl bg-gradient-to-br from-purple-950/40 to-slate-900/40 border border-purple-500/20 backdrop-blur-xl">
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-purple-400" />
+                                AI Document Assistant
+                            </h3>
+                            <p className="text-slate-400 leading-relaxed mb-6">
+                                Upload PDFs or Text files and ask complex questions. Our AI will analyze the content and give you precise answers.
+                            </p>
+                            <Link href="/dashboard/documents" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition-colors">
                                 Open Tool <ArrowRight className="w-4 h-4" />
                             </Link>
                         </div>
