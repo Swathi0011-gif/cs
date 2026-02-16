@@ -5,7 +5,7 @@ import { documents, documentChunks } from "@/lib/schema";
 import { auth } from "@/lib/auth";
 import { eq, sql as drizzleSql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import pdf from "pdf-parse/lib/pdf-parse.js";
+import { PDFParse } from "pdf-parse";
 
 // Simple chunking function using sentence/paragraph breaks
 function chunkText(text: string, chunkSize: number = 1000, overlap: number = 200): string[] {
@@ -54,8 +54,10 @@ export async function uploadDocument(formData: FormData) {
         const buffer = Buffer.from(arrayBuffer);
 
         if (file.type === "application/pdf") {
-            const data = await pdf(buffer);
-            textContent = data.text;
+            const parser = new PDFParse({ data: buffer });
+            const result = await parser.getText();
+            textContent = result.text;
+            await parser.destroy();
         } else if (file.type === "text/plain") {
             textContent = buffer.toString("utf-8");
         } else {
