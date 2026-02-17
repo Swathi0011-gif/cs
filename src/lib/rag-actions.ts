@@ -59,14 +59,24 @@ export async function getWorkspaces() {
     const session = await auth();
     if (!session?.user?.id) return [];
 
-    return await db.select().from(workspaces).where(eq(workspaces.userId, session.user.id)).orderBy(desc(workspaces.createdAt));
+    try {
+        return await db.select().from(workspaces).where(eq(workspaces.userId, session.user.id)).orderBy(desc(workspaces.createdAt));
+    } catch (error) {
+        console.error("Error fetching workspaces:", error);
+        return [];
+    }
 }
 
 export async function getWorkspaceDocuments(workspaceId: string) {
     const session = await auth();
     if (!session?.user?.id) return [];
 
-    return await db.select().from(documents).where(eq(documents.workspaceId, workspaceId));
+    try {
+        return await db.select().from(documents).where(eq(documents.workspaceId, workspaceId));
+    } catch (error) {
+        console.error("Error fetching workspace documents:", error);
+        return [];
+    }
 }
 
 async function generateEmbedding(text: string): Promise<number[] | null> {
