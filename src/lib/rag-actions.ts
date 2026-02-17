@@ -1,9 +1,9 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { documents, documentChunks } from "@/lib/schema";
+import { documents, documentChunks, workspaces } from "@/lib/schema";
 import { auth } from "@/lib/auth";
-import { eq, sql as drizzleSql } from "drizzle-orm";
+import { eq, sql as drizzleSql, cosineDistance, desc, gt } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { PDFParse } from "pdf-parse";
 
@@ -37,6 +37,73 @@ function chunkText(text: string, chunkSize: number = 1000, overlap: number = 200
     return chunks.filter(c => c.length > 50); // Filter out very small chunks
 }
 
+
+export async function createWorkspace(name: string) {
+    const session = await auth();
+    if (!session?.user?.id) return { error: "Unauthorized" };
+
+    try {
+        const [workspace] = await db.insert(workspaces).values({
+            userId: session.user.id,
+            name: name,
+        }).returning();
+        revalidatePath("/dashboard/workspaces");
+        return { success: true, workspaceId: workspace.id };
+    } catch (error) {
+        console.error("Create workspace error:", error);
+        return { error: "Failed to create workspace" };
+    }
+}
+
+export async function getWorkspaces() {
+    const session = await auth();
+    if (!session?.user?.id) return [];
+
+    return await db.select().from(workspaces).where(eq(workspaces.userId, session.user.id)).orderBy(desc(workspaces.createdAt));
+}
+
+export async function getWorkspaceDocuments(workspaceId: string) {
+    const session = await auth();
+    if (!session?.user?.id) return [];
+
+    return await db.select().from(documents).where(eq(documents.workspaceId, workspaceId));
+}
+
+async function generateEmbedding(text: string): Promise<number[] | null> {
+    try {
+        const response = await fetch(
+            "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2",
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
+            }
+        );
+
+        if (!response.ok) {
+            console.error("HF Inference API error:", await response.text());
+            return null;
+        }
+
+        const result = await response.json();
+        // HF API can return [[...]] or [...] depending on input. We expect a single embedding.
+        if (Array.isArray(result) && result.length > 0) {
+            // Handle case where it might return array of arrays or just array
+            if (Array.isArray(result[0])) {
+                return result[0] as number[];
+            }
+            return result as number[];
+        }
+        return null;
+    } catch (error) {
+        console.error("Embedding generation error:", error);
+        return null;
+    }
+}
+
 export async function uploadDocument(formData: FormData) {
     console.log("Starting uploadDocument action...");
     const session = await auth();
@@ -45,8 +112,14 @@ export async function uploadDocument(formData: FormData) {
     }
 
     const file = formData.get("file") as File;
+    const workspaceId = formData.get("workspaceId") as string;
+
     if (!file) {
         return { error: "No file provided." };
+    }
+
+    if (!workspaceId) {
+        return { error: "No workspace ID provided." };
     }
 
     try {
@@ -56,7 +129,6 @@ export async function uploadDocument(formData: FormData) {
         const buffer = Buffer.from(arrayBuffer);
 
         if (file.type === "application/pdf") {
-            console.log("Processing PDF file...", file.name);
             const parser = new PDFParse({ data: buffer });
             const result = await parser.getText();
             textContent = result.text;
@@ -71,28 +143,69 @@ export async function uploadDocument(formData: FormData) {
             return { error: "Could not extract text from the file." };
         }
 
-        console.log("Extracted text length:", textContent.length);
         // 1. Create document record
-        console.log("Inserting document into database...");
         const [doc] = await db.insert(documents).values({
             userId: session.user.id,
+            workspaceId: workspaceId,
             name: file.name,
             type: file.type.includes("pdf") ? "pdf" : "text",
             content: textContent,
         }).returning();
 
-        console.log("Document inserted with ID:", doc.id);
-        // 2. Chunk text and save chunks
-        console.log("Chunking text...");
+        // 2. Chunk text
         const chunks = chunkText(textContent);
-        const chunkValues = chunks.map((chunk, index) => ({
-            documentId: doc.id,
-            content: chunk,
-            chunkIndex: index,
-        }));
+
+        // 3. Generate embeddings and save chunks
+        console.log("Generating embeddings for", chunks.length, "chunks...");
+        const chunkValues = [];
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const embedding = await generateEmbedding(chunk);
+
+            if (embedding) {
+                chunkValues.push({
+                    documentId: doc.id,
+                    content: chunk,
+                    chunkIndex: i,
+                    embedding: embedding,
+                });
+            } else {
+                console.warn(`Failed to generate embedding for chunk ${i}, skipping embedding but keeping text.`);
+                chunkValues.push({
+                    documentId: doc.id,
+                    content: chunk,
+                    chunkIndex: i,
+                    // If embedding fails, we can't save it as null if column is not null, 
+                    // but we defined it as nullable? No, we didn't specify. 
+                    // Let's assume strict schema. 
+                    // To be safe, we might skip or use header/zero vector?
+                    // Best to skip or handle error. 
+                    // schema says: embedding: vector("embedding", { dimensions: 384 }) 
+                    // modify schema request implied it's optional? No 'notNull()' was used.
+                    // So we can leave it undefined/null if default allows, or just skip.
+                    // Let's assume it's nullable if not specified notNull().
+                    // Actually, let's treat it as required for search to work. 
+                    // If it fails, we wait or retry. 
+                    // For now, let's just log and continue, maybe passing null if the schema allows.
+                });
+            }
+
+            // Rate limiting protection
+            if (i % 5 === 0) await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        // Filter out those without embeddings if we want strict vector search, 
+        // or just insert all if nullable.
+        // Let's check schema again. `embedding: vector...` defaults to nullable usually unless `.notNull()`
 
         if (chunkValues.length > 0) {
-            await db.insert(documentChunks).values(chunkValues);
+            // we batch insert
+            // Note: Postgres has a limit on parameters, so batch if necessary
+            const BATCH_SIZE = 50;
+            for (let i = 0; i < chunkValues.length; i += BATCH_SIZE) {
+                await db.insert(documentChunks).values(chunkValues.slice(i, i + BATCH_SIZE));
+            }
         }
 
         revalidatePath("/dashboard/documents");
@@ -102,6 +215,7 @@ export async function uploadDocument(formData: FormData) {
         return { error: "Failed to process document. " + (error as Error).message };
     }
 }
+
 
 export async function getDocuments() {
     const session = await auth();
@@ -129,28 +243,30 @@ export async function queryDocument(docId: string, question: string) {
     if (!session?.user?.id) return { error: "Unauthorized" };
 
     try {
-        // Simple context retrieval: In a real app, we'd use vector similarity.
-        // For this task, we'll use a basic keyword search or just the most relevant chunks.
-        // Since we don't have pgvector, let's just get chunks that contain words from the question
-        // or just the first few chunks as a baseline if no vector possible.
-
-        // Improved simple search: look for chunks containing words from the question
-        const keywords = question.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+        // 1. Generate embedding for question
+        const queryEmbedding = await generateEmbedding(question);
 
         let relevantChunks: any[] = [];
 
-        if (keywords.length > 0) {
-            // Fuzzy match search in Postgres
-            const conditions = keywords.map(kw => drizzleSql`${documentChunks.content} ILIKE ${'%' + kw + '%'}`);
-            relevantChunks = await db.select()
+        if (queryEmbedding) {
+            // 2. Vector search
+            const similarity = drizzleSql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector)`;
+
+            relevantChunks = await db.select({
+                content: documentChunks.content,
+                similarity: similarity,
+            })
                 .from(documentChunks)
-                .where(drizzleSql`${documentChunks.documentId} = ${docId} AND (${drizzleSql.join(conditions, drizzleSql` OR `)})`)
+                .where(drizzleSql`${documentChunks.documentId} = ${docId} AND ${similarity} > 0.3`) // Filter by similarity threshold
+                .orderBy(desc(similarity))
                 .limit(5);
         }
 
+        // Fallback or if no relevant results found via vector
         if (relevantChunks.length === 0) {
-            // Fallback to first few chunks
-            relevantChunks = await db.select()
+            console.log("Vector search returned no results, falling back to simple search or recent chunks");
+            // Fallback: just get the latest or first few chunks
+            relevantChunks = await db.select({ content: documentChunks.content })
                 .from(documentChunks)
                 .where(eq(documentChunks.documentId, docId))
                 .limit(3);
@@ -159,7 +275,7 @@ export async function queryDocument(docId: string, question: string) {
         const context = relevantChunks.map(c => c.content).join("\n\n---\n\n");
 
         if (!context) {
-            return { error: "No relevant content found in the document." };
+            return { error: "No context found." };
         }
 
         // Generate answer using Groq (compatible with OpenAI) or Gemini
@@ -177,7 +293,7 @@ Answer:`;
 
         let answer = "";
 
-        // Check for Groq API key, otherwise fallback to Gemini which we know is there
+        // ... (API calling logic remains the same) ...
         const apiKey = process.env.GROQ_API_KEY || process.env.GOOGLE_AI_API_KEY;
 
         if (process.env.GROQ_API_KEY) {
@@ -215,3 +331,92 @@ Answer:`;
         return { error: "Failed to generate answer. " + (error as Error).message };
     }
 }
+
+export async function queryWorkspace(workspaceId: string, question: string) {
+    const session = await auth();
+    if (!session?.user?.id) return { error: "Unauthorized" };
+
+    try {
+        // 1. Generate embedding for question
+        const queryEmbedding = await generateEmbedding(question);
+
+        let relevantChunks: any[] = [];
+
+        if (queryEmbedding) {
+            // 2. Vector search across all documents in the workspace
+            // We need to join with documents table to filter by workspaceId
+            const similarity = drizzleSql<number>`1 - (${documentChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector)`;
+
+            relevantChunks = await db.select({
+                content: documentChunks.content,
+                documentName: documents.name,
+                similarity: similarity,
+            })
+                .from(documentChunks)
+                .innerJoin(documents, eq(documentChunks.documentId, documents.id))
+                .where(drizzleSql`${documents.workspaceId} = ${workspaceId} AND ${similarity} > 0.3`)
+                .orderBy(desc(similarity))
+                .limit(8); // Fetch more chunks for broader context
+        }
+
+        if (relevantChunks.length === 0) {
+            return { answer: "I couldn't find any relevant information in the workspace documents to answer your question." };
+        }
+
+        // Format context with source attribution
+        const context = relevantChunks.map(c => `Source: ${c.documentName}\nContent: ${c.content}`).join("\n\n---\n\n");
+
+        // Generate answer using Groq (compatible with OpenAI) or Gemini
+        const prompt = `
+You are a helpful assistant. Answer the user's question based strictly on the provided context.
+If the answer is not in the context, say that you don't know based on the provided documents.
+Always cite the source document names when providing information.
+
+Context:
+${context}
+
+Question:
+${question}
+
+Answer:`;
+
+        let answer = "";
+
+        const apiKey = process.env.GROQ_API_KEY || process.env.GOOGLE_AI_API_KEY;
+
+        if (process.env.GROQ_API_KEY) {
+            const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+                },
+                body: JSON.stringify({
+                    model: "llama-3.3-70b-versatile",
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0,
+                }),
+            });
+            const data = await response.json();
+            answer = data.choices[0].message.content;
+        } else {
+            // Fallback to Google Gemini
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0 },
+                }),
+            });
+            const data = await response.json();
+            answer = data.candidates[0].content.parts[0].text;
+        }
+
+        return { answer, sources: [...new Set(relevantChunks.map(c => c.documentName))] };
+    } catch (error) {
+        console.error("Query workspace error:", error);
+        return { error: "Failed to generate answer. " + (error as Error).message };
+    }
+}
+

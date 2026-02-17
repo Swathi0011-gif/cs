@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, uuid, integer, vector } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -10,9 +10,17 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const documents = pgTable("documents", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").references(() => users.id).notNull(),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id), // Optional for migration, strictly should be notNull for new
   name: text("name").notNull(),
   type: text("type").notNull(), // 'pdf' or 'text'
   content: text("content"), // full content for backup
@@ -24,8 +32,7 @@ export const documentChunks = pgTable("document_chunks", {
   documentId: uuid("document_id").references(() => documents.id).notNull(),
   content: text("content").notNull(),
   chunkIndex: integer("chunk_index").notNull(),
-  // We'll use this for simple search if vector is not enabled
-  // If we had pgvector, we'd add a vector column here
+  embedding: vector("embedding", { dimensions: 384 }), // for all-MiniLM-L6-v2
 });
 
 export type User = typeof users.$inferSelect;

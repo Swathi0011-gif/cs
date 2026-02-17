@@ -93,20 +93,20 @@ export default async function DashboardPage() {
                         <div className="p-8 rounded-3xl bg-gradient-to-br from-purple-950/40 to-slate-900/40 border border-purple-500/20 backdrop-blur-xl">
                             <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                                 <FileText className="w-5 h-5 text-purple-400" />
-                                AI Document Assistant
+                                AI Document Workspaces
                             </h3>
                             <p className="text-slate-400 leading-relaxed mb-6">
-                                Upload PDFs or Text files and ask complex questions. Our AI will analyze the content and give you precise answers.
+                                Create workspaces, upload multiple PDFs, and ask questions across your entire document collection.
                             </p>
-                            <Link href="/dashboard/documents" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition-colors">
-                                Open Tool <ArrowRight className="w-4 h-4" />
+                            <Link href="/dashboard/workspaces" className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-slate-200 transition-colors">
+                                Open Workspaces <ArrowRight className="w-4 h-4" />
                             </Link>
                         </div>
 
                         <div className="p-8 rounded-3xl bg-slate-900/40 border border-slate-800 backdrop-blur-xl">
-                            <h3 className="text-xl font-bold mb-4">Your Workspace</h3>
+                            <h3 className="text-xl font-bold mb-4">Project Management</h3>
                             <p className="text-slate-400 leading-relaxed">
-                                Manage your projects and monitor real-time data in a secure, high-performance environment.
+                                Manage your teams and monitor real-time data in a secure, high-performance environment.
                             </p>
                         </div>
                     </div>
