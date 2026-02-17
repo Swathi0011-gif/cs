@@ -4,6 +4,8 @@ import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
     // This is a one-time setup endpoint. 
     // In production, you would remove this or protect it with a secret key.
