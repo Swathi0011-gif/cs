@@ -196,7 +196,13 @@ export default function WorkspaceDetailPage() {
                                             <p className="text-xs font-semibold text-gray-400 mb-2">Sources:</p>
                                             <div className="flex flex-wrap gap-2">
                                                 {msg.sources.map((source, i) => (
-                                                    <span key={i} className="text-[10px] px-2 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300">
+                                                    <span
+                                                        key={i}
+                                                        className={cn(
+                                                            "text-[10px] px-2 py-1 rounded-full border flex items-center gap-1 transition-colors",
+                                                            "bg-white/5 border-white/10 text-gray-300"
+                                                        )}
+                                                    >
                                                         {source}
                                                     </span>
                                                 ))}
@@ -248,3 +254,4 @@ export default function WorkspaceDetailPage() {
         </div>
     );
 }
+

@@ -342,6 +342,9 @@ Answer:`;
     }
 }
 
+
+// ... (imports remain)
+
 export async function queryWorkspace(workspaceId: string, question: string) {
     const session = await auth();
     if (!session?.user?.id) return { error: "Unauthorized" };
@@ -408,6 +411,11 @@ Answer:`;
                 }),
             });
             const data = await response.json();
+            // Check for Groq errors
+            if (data.error) {
+                console.error("Groq Error:", data.error);
+                throw new Error("Groq API Error: " + data.error.message);
+            }
             answer = data.choices[0].message.content;
         } else {
             // Fallback to Google Gemini
@@ -420,6 +428,7 @@ Answer:`;
                 }),
             });
             const data = await response.json();
+            if (data.error) throw new Error("Gemini API Error: " + data.error.message);
             answer = data.candidates[0].content.parts[0].text;
         }
 
@@ -429,4 +438,3 @@ Answer:`;
         return { error: "Failed to generate answer. " + (error as Error).message };
     }
 }
-
